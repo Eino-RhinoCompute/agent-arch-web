@@ -8,7 +8,7 @@
         <div class="session-info">Session: {{ shortSessionId }}</div>
       </div>
 
-      <!-- 聊天记录区域 -->
+      <!-- 聊天记录 -->
       <div class="chat-history" ref="chatBox">
         <div 
           v-for="(msg, index) in chatHistory" 
@@ -21,70 +21,51 @@
           </div>
         </div>
         <div v-if="loading" class="loading-indicator">
-          <el-icon class="is-loading"><Loading /></el-icon> Agent is thinking & simulating...
+          <el-icon class="is-loading"><Loading /></el-icon> Thinking & Generating...
         </div>
       </div>
 
-      <!-- 输入控制区域 -->
+      <!-- 输入区域 -->
       <div class="input-area">
-        <!-- 上传周边环境 (模拟) -->
-        <el-upload
-          class="upload-demo"
-          action="#"
-          :auto-upload="false"
-          :on-change="handleFileChange"
-          :limit="1"
-        >
-          <template #trigger>
-            <el-button size="small" :icon="Folder">Load Context (3dm/Obj)</el-button>
-          </template>
-        </el-upload>
+        <!-- 核心功能：上传上下文文件 -->
+        <div class="upload-section">
+          <el-upload
+            class="context-upload"
+            action="#"
+            :auto-upload="false"
+            :show-file-list="false"
+            :on-change="handleFileLoad"
+            accept=".obj,.glb,.gltf,.3dm" 
+          >
+            <!-- 提示用户优先使用 OBJ，因为 .3dm 浏览器解析困难 -->
+            <el-button :icon="Folder" :type="hasContext ? 'success' : 'default'">
+              {{ hasContext ? 'Context Loaded' : 'Load Context Model (.obj)' }}
+            </el-button>
+          </el-upload>
+          <span v-if="hasContext" class="file-name">{{ contextFileName }}</span>
+        </div>
 
         <el-input
           v-model="userInput"
           type="textarea"
           :rows="3"
-          placeholder="请输入设计需求，例如：在南京鼓楼区生成一组办公楼，容积率2.5..."
+          placeholder="Describe your design requirement..."
           @keyup.enter.ctrl="handleSend"
         />
+        
         <el-button type="primary" class="send-btn" @click="handleSend" :loading="loading">
-          生成 / Generate
+          Generate
         </el-button>
       </div>
     </div>
 
-    <!-- 右侧：可视化面板 -->
+    <!-- 右侧：视窗面板 -->
     <div class="right-panel">
-      <!-- 3D 视窗 -->
-      <div class="viewer-wrapper">
-        <BuildingViewer :geometryData="currentGeometry" />
-      </div>
-
-      <!-- 分析面板 (下半部分) -->
-      <div class="analysis-panel" v-if="metrics || analysisImage">
-        <el-tabs type="border-card">
-          <el-tab-pane label="性能指标 (Metrics)">
-            <el-descriptions :column="1" border size="small">
-              <el-descriptions-item v-for="(val, key) in metrics" :key="key" :label="key">
-                {{ val }}
-              </el-descriptions-item>
-            </el-descriptions>
-          </el-tab-pane>
-          <el-tab-pane label="分析图 (Analysis)">
-            <div class="image-gallery" v-if="analysisImage">
-              <!-- 假设 analysisImage 是 Base64 数组 -->
-              <el-image 
-                v-for="(img, idx) in analysisImage" 
-                :key="idx" 
-                :src="img" 
-                :preview-src-list="analysisImage"
-                fit="cover" 
-                class="analysis-img"
-              />
-            </div>
-          </el-tab-pane>
-        </el-tabs>
-      </div>
+      <!-- 将本地文件 URL 和 后端生成数据 同时传给 Viewer -->
+      <BuildingViewer 
+        :contextFileUrl="contextModelUrl" 
+        :generatedData="generatedGeometry" 
+      />
     </div>
   </div>
 </template>
@@ -95,30 +76,38 @@ import { v4 as uuidv4 } from 'uuid';
 import { Loading, Folder } from '@element-plus/icons-vue';
 import BuildingViewer from './components/BuildingViewer.vue';
 import { sendDesignRequest } from './api/design';
-import type { ChatMessage, DesignDataPayload } from './types/agent';
+import type { ChatMessage } from './types/agent';
+import type { UploadFile } from 'element-plus';
 
-// 状态管理
+// 状态
 const sessionId = ref(uuidv4());
+const shortSessionId = computed(() => sessionId.value.slice(0, 8));
 const userInput = ref('');
 const loading = ref(false);
 const chatHistory = ref<ChatMessage[]>([]);
 const chatBox = ref<HTMLDivElement | null>(null);
 
-// 业务数据状态
-const currentGeometry = ref<string | null>(null);
-const metrics = ref<Record<string, any> | null>(null);
-const analysisImage = ref<string[] | null>(null);
-// 模拟的文件上下文内容
-const contextData = ref<string>('');
+// 模型相关状态
+const contextModelUrl = ref<string | null>(null); // 本地文件的 Blob URL
+const contextFileName = ref('');
+const generatedGeometry = ref<string | null>(null); // 后端生成的模型数据
 
-const shortSessionId = computed(() => sessionId.value.slice(0, 8));
+const hasContext = computed(() => !!contextModelUrl.value);
 
-// 处理文件上传 (这里简化为读取文件名作为Context，实际可用FileReader转Base64)
-const handleFileChange = (file: any) => {
-  contextData.value = `Loaded context file: ${file.name}. (Mocking geometry data extraction)`;
+// 处理文件加载
+const handleFileLoad = (file: UploadFile) => {
+  if (!file.raw) return;
+  
+  contextFileName.value = file.name;
+  
+  // 创建本地 Blob URL，让 Three.js 可以像加载网络图片一样加载本地文件
+  const url = URL.createObjectURL(file.raw);
+  contextModelUrl.value = url;
+
+  // 在聊天框添加系统提示
   chatHistory.value.push({
     role: 'user',
-    content: `[System]: Uploaded context file ${file.name}`,
+    content: `[System]: Context model "${file.name}" loaded into viewer.`,
     time: new Date().toLocaleTimeString()
   });
 };
@@ -129,53 +118,38 @@ const handleSend = async () => {
   const query = userInput.value;
   userInput.value = '';
 
-  // 1. 添加用户消息
-  chatHistory.value.push({
-    role: 'user',
-    content: query,
-    time: new Date().toLocaleTimeString()
-  });
+  chatHistory.value.push({ role: 'user', content: query, time: new Date().toLocaleTimeString() });
   scrollToBottom();
-
   loading.value = true;
 
   try {
-    // 2. 发送请求给 Go Eino Agent
+    // 发送请求，注意：这里我们只传了 query 和 session。
+    // 如果后端需要知道环境文件的具体数据进行计算，通常需要先单独上传文件。
+    // 在这个 Demo 中，我们假设后端是根据语义生成，或者环境数据已经通过其他方式同步。
     const res = await sendDesignRequest({
       session_id: sessionId.value,
       query: query,
-      context: contextData.value // 传递上下文
+      context: contextFileName.value // 简单传个文件名告知后端
     });
 
-    // 3. 处理 Agent 回复
     if (res.Reply) {
+      chatHistory.value.push({ role: 'agent', content: res.Reply, time: new Date().toLocaleTimeString() });
+    }
+
+    // 接收后端生成的建筑数据并显示
+    if (res.DataPayload && res.DataPayload.GeometryData) {
+      generatedGeometry.value = res.DataPayload.GeometryData;
+      
       chatHistory.value.push({
         role: 'agent',
-        content: res.Reply,
+        content: "[System]: New massing generated and visualized.",
         time: new Date().toLocaleTimeString()
       });
     }
 
-    // 4. 更新可视化数据
-    if (res.DataPayload) {
-      const payload = res.DataPayload;
-      if (payload.GeometryData) {
-        currentGeometry.value = payload.GeometryData;
-      }
-      if (payload.Metrics) {
-        metrics.value = payload.Metrics;
-      }
-      if (payload.AnalysisImage) {
-        analysisImage.value = payload.AnalysisImage; // 确保后端返回的是可显示的URL或Base64
-      }
-    }
   } catch (error) {
     console.error(error);
-    chatHistory.value.push({
-      role: 'agent',
-      content: "Error: Failed to contact the architect agent.",
-      time: new Date().toLocaleTimeString()
-    });
+    chatHistory.value.push({ role: 'agent', content: "Error: Failed to connect.", time: new Date().toLocaleTimeString() });
   } finally {
     loading.value = false;
     scrollToBottom();
@@ -184,108 +158,38 @@ const handleSend = async () => {
 
 const scrollToBottom = () => {
   nextTick(() => {
-    if (chatBox.value) {
-      chatBox.value.scrollTop = chatBox.value.scrollHeight;
-    }
+    if (chatBox.value) chatBox.value.scrollTop = chatBox.value.scrollHeight;
   });
 };
 </script>
 
 <style>
-/* 全局重置 */
-html, body, #app {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
-}
+/* 保持原有布局样式 */
+html, body, #app { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
+.app-layout { display: flex; height: 100vh; width: 100vw; }
 
-.app-layout {
-  display: flex;
-  height: 100vh;
-  width: 100vw;
+.left-panel { width: 400px; background: #fff; border-right: 1px solid #dcdfe6; display: flex; flex-direction: column; }
+.header { padding: 20px; background: #f5f7fa; border-bottom: 1px solid #eee; }
+.header h2 { 
+  margin: 0; 
+  font-size: 20px;       /* 稍微加大一点 */
+  color: #000000;        /* 纯黑色 */
+  font-weight: 800;      /* 特粗 */
+  letter-spacing: 0.5px; /* 增加一点字间距 */
 }
+.session-info { font-size: 12px; color: #909399; }
 
-/* 左侧面板 */
-.left-panel {
-  width: 400px;
-  background: #fff;
-  border-right: 1px solid #dcdfe6;
-  display: flex;
-  flex-direction: column;
-}
-
-.header {
-  padding: 20px;
-  border-bottom: 1px solid #eee;
-  background: #f5f7fa;
-}
-.header h2 { margin: 0; font-size: 18px; color: #303133; }
-.session-info { font-size: 12px; color: #909399; margin-top: 5px; }
-
-.chat-history {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-  background: #fafafa;
-}
-
+.chat-history { flex: 1; overflow-y: auto; padding: 20px; background: #fafafa; }
 .message { margin-bottom: 15px; }
 .message.user { text-align: right; }
-.message.user .message-content {
-  background: #e1f3d8;
-  display: inline-block;
-  text-align: left;
-  padding: 10px;
-  border-radius: 8px;
-}
-.message.agent .message-content {
-  background: #fff;
-  border: 1px solid #ebeef5;
-  display: inline-block;
-  padding: 10px;
-  border-radius: 8px;
-}
+.message.user .message-content { background: #e1f3d8; display: inline-block; padding: 10px; border-radius: 8px; text-align: left;}
+.message.agent .message-content { background: #fff; border: 1px solid #ebeef5; display: inline-block; padding: 10px; border-radius: 8px; }
 
-.input-area {
-  padding: 20px;
-  border-top: 1px solid #eee;
-  background: #fff;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
+.input-area { padding: 20px; border-top: 1px solid #eee; background: #fff; display: flex; flex-direction: column; gap: 10px; }
+
+.upload-section { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
+.file-name { font-size: 12px; color: #606266; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
 .send-btn { width: 100%; }
 
-/* 右侧面板 */
-.right-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: #f0f2f5;
-}
-
-.viewer-wrapper {
-  flex: 2;
-  position: relative;
-  border-bottom: 1px solid #dcdfe6;
-}
-
-.analysis-panel {
-  flex: 1;
-  background: #fff;
-  overflow-y: auto;
-}
-
-.image-gallery {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.analysis-img {
-  width: 150px;
-  height: 150px;
-  border-radius: 4px;
-  border: 1px solid #eee;
-}
+.right-panel { flex: 1; background: #f0f2f5; position: relative; }
 </style>

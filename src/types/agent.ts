@@ -1,10 +1,9 @@
 // src/types/agent.ts
 
 export interface DesignDataPayload {
-  GeometryData: string;  // 假设后端返回的是Base64编码的模型数据或JSON字符串
-  AnalysisImage: string[]; // 图片URL或Base64列表
-  Metrics: Record<string, any>; // 各种指标
-  ActionType: string;
+  GeometryData: string;  // 后端生成的模型数据 (假设为 OBJ 字符串)
+  Metrics?: Record<string, any>;
+  AnalysisImage?: string[];
 }
 
 export interface DesignResponse {
@@ -16,7 +15,7 @@ export interface DesignResponse {
 export interface DesignRequest {
   session_id: string;
   query: string;
-  context?: string; // 用于传递周边环境信息
+  context?: string; 
 }
 
 export interface ChatMessage {
