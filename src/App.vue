@@ -1,70 +1,50 @@
 <!-- src/App.vue -->
 <template>
   <div class="app-layout">
-    <!-- 左侧：交互面板 -->
+    <!-- 左侧面板代码保持不变... -->
     <div class="left-panel">
+      <!-- ...header, chat-history, input-area... -->
       <div class="header">
         <h2>AI Architect Agent</h2>
         <div class="session-info">Session: {{ shortSessionId }}</div>
       </div>
 
-      <!-- 聊天记录 -->
       <div class="chat-history" ref="chatBox">
-        <div 
-          v-for="(msg, index) in chatHistory" 
-          :key="index" 
-          :class="['message', msg.role]"
-        >
+        <div v-for="(msg, index) in chatHistory" :key="index" :class="['message', msg.role]">
           <div class="message-content">
-            <strong>{{ msg.role === 'user' ? 'You' : 'Agent' }}:</strong>
-            <p style="white-space: pre-wrap;">{{ msg.content }}</p>
+            <div class="msg-role">{{ msg.role === 'user' ? 'User' : 'Agent' }}</div>
+            <div class="msg-text">{{ msg.content }}</div>
           </div>
         </div>
-        <div v-if="loading" class="loading-indicator">
-          <el-icon class="is-loading"><Loading /></el-icon> Thinking & Generating...
+        <div v-if="loading" class="loading-message">
+          <el-icon class="is-loading"><Loading /></el-icon>
+          <span>Thinking & Generating...</span>
         </div>
       </div>
 
-      <!-- 输入区域 -->
       <div class="input-area">
-        <!-- 核心功能：上传上下文文件 -->
         <div class="upload-section">
           <el-upload
             class="context-upload"
-            action="#"
-            :auto-upload="false"
-            :show-file-list="false"
-            :on-change="handleFileLoad"
-            accept=".obj,.glb,.gltf,.3dm" 
+            action="#" :auto-upload="true" :show-file-list="false" :http-request="handleLocalPreview" accept=".obj,.glb,.gltf,.3dm" 
           >
-            <!-- 提示用户优先使用 OBJ，因为 .3dm 浏览器解析困难 -->
             <el-button :icon="Folder" :type="hasContext ? 'success' : 'default'">
               {{ hasContext ? 'Context Loaded' : 'Load Context Model (.obj)' }}
             </el-button>
           </el-upload>
           <span v-if="hasContext" class="file-name">{{ contextFileName }}</span>
         </div>
-
-        <el-input
-          v-model="userInput"
-          type="textarea"
-          :rows="3"
-          placeholder="Describe your design requirement..."
-          @keyup.enter.ctrl="handleSend"
-        />
-        
-        <el-button type="primary" class="send-btn" @click="handleSend" :loading="loading">
-          Generate
-        </el-button>
+        <el-input v-model="userInput" type="textarea" :rows="3" placeholder="请输入设计需求..." @keyup.enter.ctrl="handleSend" />
+        <el-button type="primary" class="send-btn" @click="handleSend" :disabled="loading">发送 (Generate)</el-button>
       </div>
     </div>
 
-    <!-- 右侧：视窗面板 -->
+    <!-- 右侧面板 -->
     <div class="right-panel">
-      <!-- 将本地文件 URL 和 后端生成数据 同时传给 Viewer -->
+      <!-- 🟢 传入 URL 而不是 Data -->
       <BuildingViewer 
         :contextFileUrl="contextModelUrl" 
-        :generatedData="generatedGeometry" 
+        :generatedModelUrl="generatedModelUrl" 
       />
     </div>
   </div>
@@ -74,12 +54,12 @@
 import { ref, computed, nextTick } from 'vue';
 import { v4 as uuidv4 } from 'uuid';
 import { Loading, Folder } from '@element-plus/icons-vue';
+import type { UploadRequestOptions } from 'element-plus';
 import BuildingViewer from './components/BuildingViewer.vue';
 import { sendDesignRequest } from './api/design';
 import type { ChatMessage } from './types/agent';
-import type { UploadFile } from 'element-plus';
 
-// 状态
+// ...变量定义...
 const sessionId = ref(uuidv4());
 const shortSessionId = computed(() => sessionId.value.slice(0, 8));
 const userInput = ref('');
@@ -87,27 +67,23 @@ const loading = ref(false);
 const chatHistory = ref<ChatMessage[]>([]);
 const chatBox = ref<HTMLDivElement | null>(null);
 
-// 模型相关状态
-const contextModelUrl = ref<string | null>(null); // 本地文件的 Blob URL
+const contextModelUrl = ref<string | null>(null);
 const contextFileName = ref('');
-const generatedGeometry = ref<string | null>(null); // 后端生成的模型数据
-
+// 🟢 核心改动：存储模型 URL
+const generatedModelUrl = ref<string | null>(null);
 const hasContext = computed(() => !!contextModelUrl.value);
 
-// 处理文件加载
-const handleFileLoad = (file: UploadFile) => {
-  if (!file.raw) return;
-  
-  contextFileName.value = file.name;
-  
-  // 创建本地 Blob URL，让 Three.js 可以像加载网络图片一样加载本地文件
-  const url = URL.createObjectURL(file.raw);
-  contextModelUrl.value = url;
+// 模拟多方案计数器
+let demoCount = 0;
 
-  // 在聊天框添加系统提示
+const handleLocalPreview = (options: UploadRequestOptions) => {
+  const file = options.file;
+  contextFileName.value = file.name;
+  if (contextModelUrl.value) URL.revokeObjectURL(contextModelUrl.value);
+  contextModelUrl.value = URL.createObjectURL(file);
   chatHistory.value.push({
-    role: 'user',
-    content: `[System]: Context model "${file.name}" loaded into viewer.`,
+    role: 'user', 
+    content: `[System] 已加载环境模型: ${file.name}`,
     time: new Date().toLocaleTimeString()
   });
 };
@@ -123,33 +99,40 @@ const handleSend = async () => {
   loading.value = true;
 
   try {
-    // 发送请求，注意：这里我们只传了 query 和 session。
-    // 如果后端需要知道环境文件的具体数据进行计算，通常需要先单独上传文件。
-    // 在这个 Demo 中，我们假设后端是根据语义生成，或者环境数据已经通过其他方式同步。
+    // 1. 调用后端 (仅仅为了拿文字回复和延时效果)
     const res = await sendDesignRequest({
       session_id: sessionId.value,
       query: query,
-      context: contextFileName.value // 简单传个文件名告知后端
+      context: contextFileName.value 
     });
 
-    if (res.Reply) {
-      chatHistory.value.push({ role: 'agent', content: res.Reply, time: new Date().toLocaleTimeString() });
-    }
+    // 2. 🟢 前端直接决定加载哪个模型
+    // 假设你的文件在 public/mock_models/01.obj
+    // 这里做一个简单的轮询：01.obj -> 02.obj -> 01.obj
+    const modelFiles = ['01.obj', '02.obj']; 
+    const targetFile = modelFiles[demoCount % modelFiles.length];
+    
+    // 设置 URL，触发 BuildingViewer 加载
+    // 注意：这里的路径是相对于 public 文件夹的 Web 路径
+    generatedModelUrl.value = `/mock_models/${targetFile}`;
+    
+    demoCount++; // 计数器+1
 
-    // 接收后端生成的建筑数据并显示
-    if (res.DataPayload && res.DataPayload.GeometryData) {
-      generatedGeometry.value = res.DataPayload.GeometryData;
-      
-      chatHistory.value.push({
-        role: 'agent',
-        content: "[System]: New massing generated and visualized.",
-        time: new Date().toLocaleTimeString()
-      });
+    console.log(`✨ Demo: Loading local model ${targetFile}`);
+
+    // 3. 处理文字回复
+    // @ts-ignore
+    const replyText = res.Reply || res.reply;
+    if (replyText) {
+      chatHistory.value.push({ role: 'agent', content: replyText, time: new Date().toLocaleTimeString() });
     }
 
   } catch (error) {
     console.error(error);
-    chatHistory.value.push({ role: 'agent', content: "Error: Failed to connect.", time: new Date().toLocaleTimeString() });
+    chatHistory.value.push({ role: 'agent', content: "Error: 网络请求失败，但尝试加载演示模型...", time: new Date().toLocaleTimeString() });
+    
+    // 即使后端挂了，演示时也可以强制加载模型 (救场用)
+    generatedModelUrl.value = `/mock_models/01.obj`;
   } finally {
     loading.value = false;
     scrollToBottom();
@@ -163,33 +146,26 @@ const scrollToBottom = () => {
 };
 </script>
 
-<style>
-/* 保持原有布局样式 */
-html, body, #app { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
-.app-layout { display: flex; height: 100vh; width: 100vw; }
-
-.left-panel { width: 400px; background: #fff; border-right: 1px solid #dcdfe6; display: flex; flex-direction: column; }
-.header { padding: 20px; background: #f5f7fa; border-bottom: 1px solid #eee; }
-.header h2 { 
-  margin: 0; 
-  font-size: 20px;       /* 稍微加大一点 */
-  color: #000000;        /* 纯黑色 */
-  font-weight: 800;      /* 特粗 */
-  letter-spacing: 0.5px; /* 增加一点字间距 */
-}
-.session-info { font-size: 12px; color: #909399; }
-
-.chat-history { flex: 1; overflow-y: auto; padding: 20px; background: #fafafa; }
-.message { margin-bottom: 15px; }
-.message.user { text-align: right; }
-.message.user .message-content { background: #e1f3d8; display: inline-block; padding: 10px; border-radius: 8px; text-align: left;}
-.message.agent .message-content { background: #fff; border: 1px solid #ebeef5; display: inline-block; padding: 10px; border-radius: 8px; }
-
-.input-area { padding: 20px; border-top: 1px solid #eee; background: #fff; display: flex; flex-direction: column; gap: 10px; }
-
-.upload-section { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; }
-.file-name { font-size: 12px; color: #606266; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
-.send-btn { width: 100%; }
-
-.right-panel { flex: 1; background: #f0f2f5; position: relative; }
+<style scoped>
+/* 保持所有原有样式不变... */
+.app-layout { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
+.left-panel { width: 420px; background: #ffffff; border-right: 1px solid #e0e0e0; display: flex; flex-direction: column; box-shadow: 2px 0 8px rgba(0,0,0,0.05); z-index: 10; }
+.header { padding: 15px 20px; background: #f9fafb; border-bottom: 1px solid #eee; }
+.header h2 { margin: 0; font-size: 18px; color: #1f2937; font-weight: 700; }
+.session-info { font-size: 12px; color: #9ca3af; margin-top: 4px; }
+.chat-history { flex: 1; overflow-y: auto; padding: 20px; background: #f3f4f6; display: flex; flex-direction: column; gap: 15px; }
+.message { display: flex; flex-direction: column; max-width: 85%; }
+.message.user { align-self: flex-end; align-items: flex-end; }
+.message.agent { align-self: flex-start; align-items: flex-start; }
+.message-content { padding: 12px 16px; border-radius: 12px; position: relative; font-size: 14px; line-height: 1.6; word-wrap: break-word; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+.msg-role { font-size: 11px; margin-bottom: 4px; opacity: 0.7; font-weight: bold; text-transform: uppercase; }
+.message.user .message-content { background: #3b82f6; color: white; border-bottom-right-radius: 2px; }
+.message.agent .message-content { background: #ffffff; color: #1f2937; border: 1px solid #e5e7eb; border-bottom-left-radius: 2px; }
+.message-content:empty { display: none; }
+.loading-message { align-self: center; font-size: 12px; color: #6b7280; display: flex; align-items: center; gap: 6px; margin-top: 10px; padding: 8px 16px; background: rgba(255,255,255,0.8); border-radius: 20px; }
+.input-area { padding: 20px; background: #fff; border-top: 1px solid #eee; display: flex; flex-direction: column; gap: 12px; }
+.upload-section { display: flex; align-items: center; gap: 10px; }
+.file-name { font-size: 12px; color: #666; max-width: 150px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.send-btn { width: 100%; height: 40px; font-weight: bold; }
+.right-panel { flex: 1; background: #262626; position: relative; }
 </style>

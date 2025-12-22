@@ -13,6 +13,7 @@ const apiClient = axios.create({
 });
 
 export const sendDesignRequest = async (req: DesignRequest): Promise<DesignResponse> => {
-  const { data } = await apiClient.post<DesignResponse>('/api/design', req);
+  //const { data } = await apiClient.post<DesignResponse>('/api/design', req);
+  const { data } = await apiClient.post<DesignResponse>('/api/design/fake', req);
   return data;
 };
