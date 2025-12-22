@@ -1,15 +1,18 @@
 // src/types/agent.ts
 
 export interface DesignDataPayload {
-  GeometryData: string;  // 后端生成的模型数据 (假设为 OBJ 字符串)
-  Metrics?: Record<string, any>;
-  AnalysisImage?: string[];
+  // 🟢 修改为 snake_case 以匹配后端 JSON
+  geometry_data: string;          
+  metrics?: Record<string, any>; 
+  analysis_image?: string[];      
+  action_type?: string;           
 }
 
 export interface DesignResponse {
-  Reply: string;
-  Status: string;
-  DataPayload?: DesignDataPayload;
+  // 🟢 修改为 snake_case
+  reply: string;
+  status: string;
+  data_payload?: DesignDataPayload;
 }
 
 export interface DesignRequest {
@@ -21,5 +24,6 @@ export interface DesignRequest {
 export interface ChatMessage {
   role: 'user' | 'agent';
   content: string;
+  image?: string; 
   time: string;
 }
