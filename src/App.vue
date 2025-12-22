@@ -146,14 +146,68 @@ const scrollToBottom = () => {
 };
 </script>
 
+<!-- src/App.vue 的底部 -->
+
+<style>
+/* 🟢 必须放在全局样式中 (无 scoped) */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden; /* 禁止滚动条 */
+}
+
+/* 🟢 关键：强制 #app 占满屏幕，覆盖可能存在的默认样式 */
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  max-width: none !important; /* 强制取消最大宽度限制 */
+  display: block !important;  /* 防止默认的 flex/grid 居中影响 */
+  text-align: left !important;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+</style>
+
 <style scoped>
-/* 保持所有原有样式不变... */
-.app-layout { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
-.left-panel { width: 420px; background: #ffffff; border-right: 1px solid #e0e0e0; display: flex; flex-direction: column; box-shadow: 2px 0 8px rgba(0,0,0,0.05); z-index: 10; }
+.app-layout {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* ... 以下保持你原有的 .left-panel, .right-panel 等样式不变 ... */
+.left-panel { 
+  width: 420px; 
+  min-width: 420px;
+  background: #ffffff; 
+  border-right: 1px solid #e0e0e0; 
+  display: flex; 
+  flex-direction: column; 
+  box-shadow: 2px 0 8px rgba(0,0,0,0.05);
+  z-index: 10;
+}
+
 .header { padding: 15px 20px; background: #f9fafb; border-bottom: 1px solid #eee; }
 .header h2 { margin: 0; font-size: 18px; color: #1f2937; font-weight: 700; }
 .session-info { font-size: 12px; color: #9ca3af; margin-top: 4px; }
-.chat-history { flex: 1; overflow-y: auto; padding: 20px; background: #f3f4f6; display: flex; flex-direction: column; gap: 15px; }
+
+.chat-history { 
+  flex: 1; 
+  overflow-y: auto; 
+  padding: 20px; 
+  background: #f3f4f6; 
+  display: flex; 
+  flex-direction: column; 
+  gap: 15px; 
+}
+
 .message { display: flex; flex-direction: column; max-width: 85%; }
 .message.user { align-self: flex-end; align-items: flex-end; }
 .message.agent { align-self: flex-start; align-items: flex-start; }
@@ -167,5 +221,11 @@ const scrollToBottom = () => {
 .upload-section { display: flex; align-items: center; gap: 10px; }
 .file-name { font-size: 12px; color: #666; max-width: 150px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .send-btn { width: 100%; height: 40px; font-weight: bold; }
-.right-panel { flex: 1; background: #262626; position: relative; }
+
+.right-panel { 
+  flex: 1; 
+  background: #262626; 
+  position: relative; 
+  /* 确保这里没有 padding 或 margin */
+}
 </style>
