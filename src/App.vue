@@ -1,7 +1,7 @@
 <template>
   <div class="app-layout">
     
-    <!-- 🟢 模拟演示弹窗 (全屏遮罩) -->
+    <!-- 🟢 模拟演示弹窗 (全屏遮罩 - 用于性能模拟) -->
     <div v-if="showAgentProcess" class="agent-process-overlay">
       <div class="agent-process-box">
         <div class="process-header">
@@ -13,23 +13,19 @@
         <ul class="process-steps">
           <li :class="{ active: processStep >= 1, done: processStep > 1 }">
             <el-icon v-if="processStep > 1"><Check /></el-icon>
-            <span v-else>1.</span> 
-            Intent Recognition & Task Planning
+            <span v-else>1.</span> Intent Recognition & Task Planning
           </li>
           <li :class="{ active: processStep >= 2, done: processStep > 2 }">
             <el-icon v-if="processStep > 2"><Check /></el-icon>
-            <span v-else>2.</span>
-            Calling Tool: <b>[{{ currentToolName }}]</b>
+            <span v-else>2.</span> Calling Tool: <b>[{{ currentToolName }}]</b>
           </li>
           <li :class="{ active: processStep >= 3, done: processStep > 3 }">
             <el-icon v-if="processStep > 3"><Check /></el-icon>
-            <span v-else>3.</span>
-            Running Simulation & Calculation
+            <span v-else>3.</span> Running Simulation & Calculation
           </li>
           <li :class="{ active: processStep >= 4, done: processStep > 4 }">
             <el-icon v-if="processStep > 4"><Check /></el-icon>
-            <span v-else>4.</span>
-            Generating Analysis Cloud Map
+            <span v-else>4.</span> Generating Analysis Cloud Map
           </li>
         </ul>
       </div>
@@ -47,25 +43,20 @@
           <div class="message-content">
             <div class="msg-role">{{ msg.role === 'user' ? 'User' : 'Agent' }}</div>
             
-            <!-- 🟢 图片显示逻辑 -->
+            <!-- 图片显示逻辑 -->
             <div v-if="msg.image" class="msg-image-container">
-              <el-image 
-                :src="msg.image" 
-                :preview-src-list="[msg.image]" 
-                fit="cover" 
-                class="chat-img"
-              />
+              <el-image :src="msg.image" :preview-src-list="[msg.image]" fit="cover" class="chat-img" />
               <div class="img-caption">Simulation Result</div>
             </div>
 
-            <div class="msg-text">{{ msg.content }}</div>
+            <div class="msg-text" style="white-space: pre-wrap;">{{ msg.content }}</div>
           </div>
         </div>
         
         <!-- 普通 Loading (仅在没有弹窗时显示) -->
         <div v-if="loading && !showAgentProcess" class="loading-message">
           <el-icon class="is-loading"><Loading /></el-icon>
-          <span>Agent is thinking...</span>
+          <span>Agent is searching knowledge base & thinking...</span>
         </div>
       </div>
 
@@ -85,7 +76,7 @@
           v-model="userInput" 
           type="textarea" 
           :rows="3" 
-          placeholder="输入需求 (例如: 进行风环境模拟...)" 
+          placeholder="输入需求 (例如: 南京市设计办公建筑园区时有哪些要点需要注意？)" 
           @keyup.enter.ctrl="handleSend" 
         />
         
@@ -125,7 +116,6 @@ import type { UploadRequestOptions } from 'element-plus';
 import BuildingViewer from './components/BuildingViewer.vue';
 import { sendDesignRequest } from './api/design';
 
-// 🟢 资源映射表 (确保 public/mock_images/ 下有 wind.png)
 const MODEL_MAP: Record<string, string> = {
   'initial':   '/mock_models/01.obj',
   'optimized': '/mock_models/02.obj',
@@ -155,7 +145,6 @@ const contextFileName = ref('');
 const generatedModelUrl = ref<string | null>(null);
 const hasContext = computed(() => !!contextModelUrl.value);
 
-// 动画状态
 const showAgentProcess = ref(false);
 const processStep = ref(1);
 const currentToolName = ref('Simulation');
@@ -173,10 +162,42 @@ const handleSend = async () => {
   const query = userInput.value;
   userInput.value = '';
 
+  // 用户消息上屏
   chatHistory.value.push({ role: 'user', content: query, time: new Date().toLocaleTimeString() });
   scrollToBottom();
   loading.value = true;
 
+  // 🟢 核心新增：RAG 规范问答拦截逻辑 (Hard Code)
+  const RAG_TRIGGER_QUERY = "南京市设计办公建筑园区时有哪些要点需要注意？";
+  
+  if (query.trim() === RAG_TRIGGER_QUERY) {
+    // 模拟 RAG 检索知识库的时间延迟 (1.5秒)
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    // 构造带有浓厚 "知识库检索" 风格的回复
+    const ragReply = `✅ 已调用[RAG_Search_Agent] 检索内置知识库。
+基于《南京市城市规划管理技术规定》及相关建筑规范，为您总结办公建筑园区设计的关键要点：
+
+1. **容积率与建筑密度**：根据南京市不同区位（如主城区与新城区），办公园区的容积率通常控制在 1.5 - 4.0 之间，建筑密度一般不超过 40%。
+2. **日照与退界**：虽办公建筑非居住类，但需确保不对周边住宅产生违规遮挡（需满足大寒日2小时日照要求）。建筑退让道路红线和用地红线的距离需严格满足当地规划局的强制性要求。
+3. **停车配建**：南京市要求机动车停车位按每 100 平方米建筑面积不少于 0.8 - 1.2 个进行配建，且需按比例配置新能源充电桩。
+4. **绿色生态（海绵城市）**：响应南京市“绿色建筑”要求，园区绿地率通常需达到 20% - 30%，建议融入海绵城市设计（如透水铺装、雨水花园）。
+5. **视线与高度控制**：若地块位于紫金山、明城墙等历史风貌保护区或视线走廊周边，建筑高度将受到严格的绝对限高控制。
+
+*(注：本回答基于 RAG 检索本地规范知识库生成，后续可在此规范约束下进行体量生成。)*`;
+
+    chatHistory.value.push({
+      role: 'agent',
+      content: ragReply,
+      time: new Date().toLocaleTimeString()
+    });
+
+    loading.value = false;
+    scrollToBottom();
+    return; // 拦截结束，直接退出函数，不再请求后端
+  }
+
+  // 👇 下方是原有的体量生成和性能模拟请求逻辑
   try {
     const res = await sendDesignRequest({
       session_id: sessionId.value,
@@ -184,32 +205,20 @@ const handleSend = async () => {
       context: contextFileName.value 
     });
 
-    console.log("📦 Full Backend Response:", res); // 调试日志
-
-    // 🟢 1. 极其稳健的数据读取逻辑 (兼容 snake_case 和 PascalCase)
     // @ts-ignore
     const payload = res.data_payload || res.DataPayload || {};
-    
     // @ts-ignore
     const actionType = payload.action_type || payload.ActionType;
-    
     // @ts-ignore
     const modelKey = payload.geometry_data || payload.GeometryData || 'initial';
-    
     // @ts-ignore
     const imgArr = payload.analysis_image || payload.AnalysisImage;
     const imageKey = (imgArr && imgArr.length > 0) ? imgArr[0] : '';
 
-    console.log(`🔍 Parsed Keys -> Model: ${modelKey}, Image: ${imageKey}, Action: ${actionType}`);
-
-    // 2. 映射为真实 URL
-    // 注意：MODEL_MAP 和 IMAGE_MAP 的 Key 必须和后端返回的字符串一致 (比如 "wind")
     const finalModelUrl = MODEL_MAP[modelKey] || MODEL_MAP['initial'] || null;
     const finalImageUrl = IMAGE_MAP[imageKey] || '';
 
-    // 3. 触发动画逻辑
     if (finalImageUrl) {
-      // 根据图片类型设置工具名称
       if (imageKey.includes('wind')) currentToolName.value = "CFD Wind Analysis Agent";
       else if (imageKey.includes('sun')) currentToolName.value = "Sunlight Analysis Agent";
       else if (imageKey.includes('comfort')) currentToolName.value = "Thermal Comfort Agent";
@@ -220,17 +229,14 @@ const handleSend = async () => {
       showAgentProcess.value = false;
     }
 
-    // 4. 更新右侧模型
     generatedModelUrl.value = finalModelUrl;
 
-    // 5. 左侧回复上屏
     // @ts-ignore
     const replyText = res.reply || res.Reply || "";
-    
     chatHistory.value.push({
       role: 'agent',
       content: replyText,
-      image: finalImageUrl, // 只有这里传了值，模板里的 v-if="msg.image" 才会生效
+      image: finalImageUrl,
       time: new Date().toLocaleTimeString()
     });
 
@@ -243,14 +249,12 @@ const handleSend = async () => {
   }
 };
 
-// 模拟动画步进 (每一步 800ms)
 const runSimulationDemo = async () => {
   const stepDelay = 800; 
   processStep.value = 1; await new Promise(r => setTimeout(r, stepDelay));
   processStep.value = 2; await new Promise(r => setTimeout(r, stepDelay));
   processStep.value = 3; await new Promise(r => setTimeout(r, stepDelay));
   processStep.value = 4; await new Promise(r => setTimeout(r, stepDelay));
-  // 额外停顿一下展示"完成"状态
   await new Promise(r => setTimeout(r, 600));
 };
 
@@ -274,51 +278,23 @@ const scrollToBottom = () => {
 </script>
 
 <style>
-/* 全局重置 */
+/* 全局重置保持不变 */
 html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
 #app { width: 100%; height: 100%; margin: 0; padding: 0; max-width: none !important; display: block !important; text-align: left !important; }
 *, *::before, *::after { box-sizing: border-box; }
 </style>
 
 <style scoped>
+/* 原有全部样式保持不变 */
 .app-layout { display: flex; height: 100%; width: 100%; overflow: hidden; position: relative; }
 
-/* 🟢 Agent Process Overlay (弹窗样式) */
-.agent-process-overlay {
-  position: absolute;
-  top: 0; left: 0; width: 100%; height: 100%;
-  background: rgba(0, 0, 0, 0.65); /* 半透明遮罩 */
-  z-index: 999;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  backdrop-filter: blur(8px); /* 模糊背景 */
-}
-
-.agent-process-box {
-  background: #fff;
-  padding: 30px;
-  border-radius: 12px;
-  width: 420px;
-  box-shadow: 0 15px 40px rgba(0,0,0,0.4);
-  text-align: left;
-  border: 1px solid rgba(255,255,255,0.2);
-}
-
-.process-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 25px;
-  border-bottom: 1px solid #f0f0f0;
-  padding-bottom: 15px;
-}
+/* 弹窗样式 */
+.agent-process-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.65); z-index: 999; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(8px); }
+.agent-process-box { background: #fff; padding: 30px; border-radius: 12px; width: 420px; box-shadow: 0 15px 40px rgba(0,0,0,0.4); text-align: left; border: 1px solid rgba(255,255,255,0.2); }
+.process-header { display: flex; align-items: center; gap: 12px; margin-bottom: 25px; border-bottom: 1px solid #f0f0f0; padding-bottom: 15px; }
 .process-header h3 { margin: 0; color: #409eff; font-size: 18px; }
-
 .process-steps { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 15px; }
-.process-steps li {
-  font-size: 14px; color: #aaa; display: flex; align-items: center; gap: 10px; transition: all 0.3s ease;
-}
+.process-steps li { font-size: 14px; color: #aaa; display: flex; align-items: center; gap: 10px; transition: all 0.3s ease; }
 .process-steps li.active { color: #333; font-weight: 600; transform: translateX(6px); }
 .process-steps li.done { color: #67c23a; }
 
