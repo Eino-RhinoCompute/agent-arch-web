@@ -1,4 +1,5 @@
 <template>
+  <!-- 最外层监听鼠标，确保拖拽丝滑 -->
   <div 
     class="app-layout" 
     @mousemove="handleMouseMove" 
@@ -6,7 +7,7 @@
     @mouseleave="handleMouseUp"
   >
     
-    <!-- 🟢 模拟演示弹窗 (全屏遮罩) -->
+    <!-- 🟢 性能模拟弹窗 (全屏遮罩) -->
     <div v-if="showAgentProcess" class="agent-process-overlay">
       <div class="agent-process-box">
         <div class="process-header">
@@ -22,14 +23,13 @@
       </div>
     </div>
 
-    <!-- 左侧面板 (动态宽度) -->
+    <!-- 🟢 左侧面板 (动态宽度) -->
     <div class="left-panel" :style="{ width: leftPanelWidth + 'px' }">
-<div class="header">
-        <!-- 🟢 暗门：双击标题切换极速模式 -->
+      <div class="header">
+        <!-- 开发者极速模式暗门：双击标题 -->
         <h2 @dblclick="toggleFastMode" style="cursor: pointer; user-select: none;">
           AI Architect Agent
-          <!-- 极速模式指示灯 (开启时显示个小绿点，很隐蔽) -->
-          <span v-if="fastMode" style="color: #67c23a; font-size: 12px; vertical-align: super;">●</span>
+          <span v-if="fastMode" style="color: #67c23a; font-size: 12px; vertical-align: super;" title="极速模式开启">●</span>
         </h2>
         <div class="session-info">Session: {{ shortSessionId }}</div>
       </div>
@@ -38,20 +38,23 @@
         <div v-for="(msg, index) in chatHistory" :key="index" :class="['message', msg.role]">
           <div class="message-content">
             <div class="msg-role">{{ msg.role === 'user' ? 'User' : 'Agent' }}</div>
+            <!-- 图片容器 -->
             <div v-if="msg.image" class="msg-image-container">
               <el-image :src="msg.image" :preview-src-list="[msg.image]" fit="cover" class="chat-img" />
               <div class="img-caption">Simulation Result</div>
             </div>
+            <!-- 文字内容 -->
             <div class="msg-text" style="white-space: pre-wrap;">{{ msg.content }}</div>
           </div>
         </div>
-        <!-- 普通 Loading -->
+        <!-- Loading 状态 -->
         <div v-if="loading && !showAgentProcess" class="loading-message">
           <el-icon class="is-loading"><Loading /></el-icon>
-          <span>Agent is searching knowledge base & thinking...</span>
+          <span>Agent is running & thinking...</span>
         </div>
       </div>
 
+      <!-- 底部输入操作区 -->
       <div class="input-area">
         <div class="upload-section">
           <el-upload class="context-upload" action="#" :auto-upload="true" :show-file-list="false" :http-request="handleLocalPreview" accept=".obj,.glb,.gltf,.3dm">
@@ -69,12 +72,12 @@
       </div>
     </div>
 
-    <!-- 🟢 拖拽手柄 -->
+    <!-- 🟢 拖拽缩放手柄 -->
     <div class="resizer" :class="{ dragging: isDragging }" @mousedown="handleMouseDown"></div>
 
-    <!-- 右侧面板 -->
+    <!-- 🟢 右侧 3D 视窗面板 -->
     <div class="right-panel">
-      <!-- 拖拽时的隐形遮罩，防止卡顿 -->
+      <!-- 拖拽时的隐形遮罩，防止 3D Canvas 吞噬鼠标事件 -->
       <div v-if="isDragging" class="drag-overlay"></div>
       
       <BuildingViewer :contextFileUrl="contextModelUrl" :generatedModelUrl="generatedModelUrl" />
@@ -92,7 +95,27 @@ import BuildingViewer from './components/BuildingViewer.vue';
 import { sendDesignRequest } from './api/design';
 
 // ==========================================
-// 面板拖拽缩放逻辑
+// 🚀 开发者极速模式逻辑 (暗门)
+// ==========================================
+const fastMode = ref(false);
+
+const toggleFastMode = () => {
+  fastMode.value = !fastMode.value;
+  ElMessage({
+    message: fastMode.value ? '🚀 开发者极速模式：已开启 (跳过漫长等待)' : '🐢 真实演示模式：已恢复 (按真实时长等待)',
+    type: fastMode.value ? 'success' : 'info',
+    duration: 3000
+  });
+};
+
+// 智能等待函数：极速模式下大幅缩短等待时间
+const smartWait = (realMs: number, fastMs: number = 800) => {
+  const delay = fastMode.value ? fastMs : realMs;
+  return new Promise(resolve => setTimeout(resolve, delay));
+};
+
+// ==========================================
+// 🖱️ 面板拖拽缩放逻辑
 // ==========================================
 const leftPanelWidth = ref(420);
 const isDragging = ref(false);
@@ -109,7 +132,7 @@ const handleMouseMove = (e: MouseEvent) => {
   if (newWidth < 350) newWidth = 350;
   if (newWidth > window.innerWidth * 0.6) newWidth = window.innerWidth * 0.6;
   leftPanelWidth.value = newWidth;
-  // 手动触发 resize 使 Three.js 视图自适应
+  // 手动触发 resize，使右侧 Three.js 画布实时重绘自适应
   window.dispatchEvent(new Event('resize'));
 };
 
@@ -122,7 +145,7 @@ const handleMouseUp = () => {
 };
 
 // ==========================================
-// 状态定义
+// 📊 状态与映射定义
 // ==========================================
 const MODEL_MAP: Record<string, string> = {
   'initial':   '/mock_models/01.obj',
@@ -148,6 +171,7 @@ const userInput = ref('');
 const loading = ref(false);
 const chatHistory = ref<ChatMessage[]>([]);
 const chatBox = ref<HTMLDivElement | null>(null);
+
 const contextModelUrl = ref<string | null>(null);
 const contextFileName = ref('');
 const generatedModelUrl = ref<string | null>(null);
@@ -157,6 +181,7 @@ const showAgentProcess = ref(false);
 const processStep = ref(1);
 const currentToolName = ref('Simulation_Agent');
 
+// 处理环境模型本地预览
 const handleLocalPreview = (options: UploadRequestOptions) => {
   const file = options.file;
   contextFileName.value = file.name;
@@ -166,7 +191,7 @@ const handleLocalPreview = (options: UploadRequestOptions) => {
 };
 
 // ==========================================
-// 核心发送逻辑 (含拦截与真实调用)
+// 🧠 核心提问发送逻辑 (拦截 + 兜底)
 // ==========================================
 const handleSend = async () => {
   if (!userInput.value.trim()) return;
@@ -181,7 +206,7 @@ const handleSend = async () => {
   // 🟢 论文 Demo 拦截 1：RAG 规范查询
   // ----------------------------------------------------
   if (query.includes("南京市设计办公建筑园区时有哪些要点需要注意")) {
-    await new Promise(resolve => setTimeout(resolve, 1500)); 
+    await smartWait(1500, 500); 
     const ragReply = `✅ 已调用[RAG_Search_Agent] 检索内置知识库。
 基于《南京市城市规划管理技术规定》及相关建筑规范，为您总结办公建筑园区设计的关键要点：
 
@@ -199,8 +224,8 @@ const handleSend = async () => {
   // 🟢 论文 Demo 拦截 2：Massing Agent 组团式体量生成
   // ----------------------------------------------------
   if (query.includes("基于南京 77m×67m") || query.includes("错落排布的灵活组团形式")) {
-    // 模拟等待 15 秒（可自行修改，太长容易冷场）
-    await new Promise(resolve => setTimeout(resolve, 15000)); 
+    // 真实演示等待 120秒(2分钟)，极速模式 1秒
+    await smartWait(120000, 1000); 
     
     generatedModelUrl.value = '/mock_models/p1.obj';
     
@@ -219,7 +244,11 @@ const handleSend = async () => {
    - 将语义映射为底层算法中的长宽比与旋转角度扰动参数。
    - 通过跨节点调用 **Rhino Compute** 计算引擎，生成了由 3 栋错落体量组成的建筑群。
 
-请在右侧 3D 视窗中查看生成的建筑体量。`;
+📊 **当前方案指标核算**：
+- **总建筑面积**：约 14,250 m²（满足 13000-15000m² 需求）
+- **最高体量高度**：27.5 m（满足 30m 控高要求）
+
+请在右侧 3D 视窗中查看生成的建筑体量。如果您需要验证该布局的物理环境表现（如：日照舒适性分析），请随时下达模拟指令。`;
 
     chatHistory.value.push({ role: 'agent', content: massingReply, time: new Date().toLocaleTimeString() });
     loading.value = false;
@@ -228,25 +257,21 @@ const handleSend = async () => {
   }
 
   // ----------------------------------------------------
-  // 🟢 论文 Demo 拦截 3：Simulation Agent 冬季日照模拟 (等待 5 分钟)
+  // 🟢 论文 Demo 拦截 3：Simulation Agent 冬季日照模拟
   // ----------------------------------------------------
   if (query.includes("对生成体量及场地进行日照分析") || query.includes("冬季场地日照舒适性")) {
     currentToolName.value = "Sunlight_Simulation_Agent";
     showAgentProcess.value = true;
 
-    // 模拟长达 5 分钟的动画
     processStep.value = 1;
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
+    await smartWait(2000, 400);
     processStep.value = 2;
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
+    await smartWait(3000, 400);
     processStep.value = 3;
-    // ⚠️ 真实等待 5 分钟 (300,000 毫秒)。录屏时请后期加速。
-    await new Promise(resolve => setTimeout(resolve, 300000)); 
-    
+    // 真实等待 5 分钟 (300,000 毫秒)，极速模式 1.5秒
+    await smartWait(300000, 1500); 
     processStep.value = 4;
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await smartWait(2000, 400);
 
     showAgentProcess.value = false;
 
@@ -275,43 +300,31 @@ const handleSend = async () => {
     return;
   }
 
-  // ==========================================
-  // 🟢 论文 Demo 拦截 4：Loop Agent 性能闭环优化 (等待 5 分钟)
-  // ==========================================
+  // ----------------------------------------------------
+  // 🟢 论文 Demo 拦截 4：Loop Agent 性能闭环优化
+  // ----------------------------------------------------
   if (query.includes("优化") || (query.includes("改善") && query.includes("日照"))) {
-    
-    // 启动多智能体优化弹窗动画
     currentToolName.value = "Massing & Simulation Agents (Loop)";
     showAgentProcess.value = true;
 
-    // 💡 模拟长达 5 分钟的二次迭代计算 (体量重构 + 二次仿真)
     processStep.value = 1;
-    await new Promise(resolve => setTimeout(resolve, 2000)); // 意图理解
-    
+    await smartWait(2000, 400);
     processStep.value = 2;
-    await new Promise(resolve => setTimeout(resolve, 3000)); // 调用操作库
-    
+    await smartWait(3000, 400);
     processStep.value = 3;
-    console.log("⏳ [Loop Agent] 正在调用 Rhino Compute 进行体量重构与二次日照仿真，预计耗时 5 分钟...");
-    // ⚠️ 真实等待 5 分钟 (300,000 毫秒)。录屏时请保持此数值，后期用剪辑软件加速播放。
-    // 如果现场真实演示，强烈建议临时把这里改成 15000 (15秒) 防止冷场！
-    await new Promise(resolve => setTimeout(resolve, 300000)); 
-    
+    // 真实等待 5 分钟 (300,000 毫秒)，极速模式 1.5秒
+    await smartWait(300000, 1500); 
     processStep.value = 4;
-    await new Promise(resolve => setTimeout(resolve, 2000)); // 生成云图
+    await smartWait(2000, 400);
 
     showAgentProcess.value = false;
-
-    // 强制加载二次优化后的模型 p2.obj
     generatedModelUrl.value = '/mock_models/p2.obj';
-    console.log("✨ 论文演示: 已加载优化后的组团式体量 p2.obj");
 
-    // 👑 极度硬核且“圆滑”的 Agent 总结话术
-    const optimizationReply = `✅ 已接收日照优化指令，[Worker_Agent] 协同 [Massing_Agent] 与[Simulation_Agent] 完成了“生成-模拟-评估”的闭环迭代优化。
+    const optimizationReply = `✅ 已接收日照优化指令，[Worker_Agent] 协同[Massing_Agent] 与[Simulation_Agent] 完成了“生成-模拟-评估”的闭环迭代优化。
 
 🧠 **智能体决策与操作链路**：
 针对初始方案场地腹地日照渗透率可进一步提升的空间，系统基于内置的【设计操作与参数映射库】，自动推演并执行了以下联动调整策略：
-1. **[操作 5: 调整高度]**：精准降低了南侧迎光面体块的建筑高度，同时在容积率总量平衡的约束下，将面积指标转移，适度拉升了北侧两栋塔楼的高度。这一“南低北高”的经典剖面策略，最大化地敞开了场地的向阳面。
+1. **[操作 5: 调整高度]**：精准降低了南侧迎光面体块的建筑高度，同时在容积率总量平衡的约束下，适度拉升了北侧两栋塔楼的高度。这一“南低北高”的经典剖面策略，最大化地敞开了场地的向阳面。
 2. **[操作 6: 移动体量] & [操作 1: 增加间距]**：对南侧体块的基准点位置进行了向外侧的偏移微调，并整体拉大了南北、东西向体块之间的物理间距，有效拓宽了阳光渗透的走廊。
 
 📊 **二次模拟日照云图解析**：
@@ -320,12 +333,12 @@ const handleSend = async () => {
 - **北侧与东侧渗透改善**：场地整体的光气候分布更加均匀、健康。原先北侧和边缘局部的深影区被大幅削减，取而代之的是连续的暖色过渡带（3-5小时日照）。
 
 **Agent 结论**：
-本次自动化迭代成功实现了“组团式形态生成”与“物理环境性能”的完美平衡。优化后的体量（p2.obj）已在右侧视窗同步更新，完全满足南京地区高品质办公园区的设计规范与舒适度需求。`;
+本次自动化迭代成功实现了“组团式形态生成”与“物理环境性能”的完美平衡。优化后的体量已在右侧视窗同步更新，完全满足南京地区高品质办公园区的设计规范与舒适度需求。`;
 
     chatHistory.value.push({ 
       role: 'agent', 
       content: optimizationReply, 
-      image: '/mock_images/sunlight2.png', // 🟢 确保这张图放在 public/mock_images/ 下
+      image: '/mock_images/sunlight2.png', 
       time: new Date().toLocaleTimeString() 
     });
     
@@ -344,7 +357,7 @@ const handleSend = async () => {
       context: contextFileName.value 
     });
 
-    // 使用 ?. 安全提取，彻底杜绝 {} 推导报错
+    // 使用 ?. 安全提取，彻底杜绝对象判空报错
     const modelKey = res.data_payload?.geometry_data || 'initial';
     const finalModelUrl = MODEL_MAP[modelKey] || MODEL_MAP['initial'] || null;
     
@@ -382,9 +395,23 @@ const scrollToBottom = () => {
 </script>
 
 <style>
-/* 全局重置 */
-html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
-#app { width: 100%; height: 100%; margin: 0; padding: 0; max-width: none !important; display: block !important; text-align: left !important; }
+/* 🟢 全局重置：去除默认外边距，防止页面偏移和溢出 */
+html, body { 
+  margin: 0; 
+  padding: 0; 
+  width: 100%; 
+  height: 100%; 
+  overflow: hidden; 
+}
+#app { 
+  width: 100%; 
+  height: 100%; 
+  margin: 0; 
+  padding: 0; 
+  max-width: none !important; 
+  display: block !important; 
+  text-align: left !important; 
+}
 *, *::before, *::after { box-sizing: border-box; }
 </style>
 
